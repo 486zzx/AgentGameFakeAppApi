@@ -1,0 +1,3 @@
+# 开发与测试依赖（单元测试可直接运行）
+-r requirements.txt
+pytest>=7.0

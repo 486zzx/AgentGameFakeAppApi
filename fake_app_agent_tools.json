@@ -119,6 +119,14 @@
         "parameters": []
       }
     },
+    "/api/houses/init": {
+      "post": {
+        "operationId": "init_houses",
+        "summary": "房源数据重置",
+        "description": "重置当前用户视角下的房源数据状态，使可租/已租/下架恢复为初始状态。建议每新起一个 session 调用一次，保障用例执行使用初始化数据。调用时请求头必带 X-User-ID。",
+        "parameters": []
+      }
+    },
     "/api/houses/{house_id}": {
       "get": {
         "operationId": "get_house_by_id",

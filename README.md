@@ -91,7 +91,147 @@
 | 15 | POST | /api/houses/{house_id}/offline | 将当前用户视角下该房源设为下架。传入房源 ID 与 listing_platform（必填）以明确操作哪个平台；三平台状态一并更新，响应返回该条。调用时请求头必带 X-User-ID。 |
 
 
-## 四、FAQ
-Q：重复执行同一个用例，第二次执行后房源数据查不到了
-A：首次执行用例时，将房源状态更新为了已租，再次执行用例，查询可租房源时返回结果必然为空。此时可以手动触发房源重置接口（见章节2）
+## 四、客户端组件使用说明
+
+本项目提供基于需求文档实现的 **Python API 客户端**，便于 Agent 或评测脚本直接调用接口。
+
+### 安装
+
+```bash
+pip install -r requirements.txt
+# 或以可编辑方式安装当前目录
+pip install -e .
+```
+
+### 直接运行示例
+
+在项目根目录执行（将 `http://IP:8080` 和 `你的工号` 换成实际值）：
+
+```bash
+# 完整演示：创建客户端 + 房源重置 + 地标/房源统计与列表
+python run_example.py --base-url http://IP:8080 --user-id 你的工号
+
+# 不调用房源重置，仅查询
+python run_example.py --base-url http://IP:8080 --user-id 你的工号 --no-init
+
+# 仅演示地标接口（不依赖工号，适合先验证服务连通性）
+python run_example.py --base-url http://IP:8080 --landmarks-only
+```
+
+### 基本用法
+
+```python
+from agent_game_fake_app_api import FakeAppApiClient, create_client_and_init
+
+base_url = "http://你的IP:8080"
+user_id = "你的工号"  # 比赛平台注册的用户工号，必填
+
+# 方式一：仅创建客户端
+client = FakeAppApiClient(base_url=base_url, user_id=user_id)
+
+# 方式二：创建客户端并执行一次房源重置（建议每个新 session 调用）
+client = create_client_and_init(base_url=base_url, user_id=user_id)
+```
+
+### 地标接口（不需 X-User-ID，客户端内部已区分）
+
+```python
+landmarks = client.get_landmarks(category="subway", district="海淀")
+xierqi = client.get_landmark_by_name("西二旗站")
+list_res = client.search_landmarks("国贸", category="landmark")
+stats = client.get_landmark_stats()
+```
+
+### 房源接口（自动附带 X-User-ID）
+
+```python
+# 房源数据重置（新 session 建议先调用）
+client.init_houses()
+
+house = client.get_house("HF_2001")
+listings = client.get_house_listings("HF_2001")
+by_community = client.get_houses_by_community(community="建清园(南区)")
+by_platform = client.get_houses_by_platform(
+    district="海淀",
+    min_price=2000,
+    max_price=5000,
+    max_subway_dist=800,
+    page=1,
+    page_size=10,
+)
+nearby = client.get_houses_nearby(landmark_id="SS_001", max_distance=2000)
+nearby_landmarks = client.get_nearby_landmarks(community="建清园(南区)", landmark_type="shopping")
+house_stats = client.get_house_stats()
+```
+
+### 租房 / 退租 / 下架（必须调用 API 才算完成）
+
+```python
+client.rent_house("HF_2001", "安居客")
+client.terminate_rental("HF_2001", "安居客")
+client.take_offline("HF_2001", "链家")
+```
+
+### OpenAPI 规范
+
+接口定义见 `fake_app_agent_tools.json`（含房源数据重置 `POST /api/houses/init`），可供 Agent 工具描述或代码生成使用。
+
+---
+
+## 五、测试
+
+### 运行单元测试（无需真实服务，可直接跑）
+
+```bash
+# 安装测试依赖
+pip install -r requirements.txt
+pip install pytest
+
+# 运行全部单元测试（Mock 请求，不访问真实 API）
+python -m pytest tests/ -v
+
+# 或使用项目内脚本
+python run_tests.py
+```
+
+单元测试覆盖需求文档中的全部 16 个接口：请求方法、路径、查询参数、以及房源接口必带 `X-User-ID`、地标接口不带等行为。
+
+### 运行集成测试（需真实服务）
+
+使用脚本（推荐，自动注入环境变量）：
+
+```bash
+python run_integration_tests.py --base-url http://你的服务IP:8080 --user-id 你的工号
+```
+
+或使用环境变量后直接调 pytest：
+
+```bash
+# Windows
+set RUN_INTEGRATION=1
+set BASE_URL=http://你的服务IP:8080
+set USER_ID=你的工号
+python -m pytest tests/test_integration.py -v
+
+# Linux / macOS
+RUN_INTEGRATION=1 BASE_URL=http://你的服务IP:8080 USER_ID=你的工号 python -m pytest tests/test_integration.py -v
+```
+
+---
+
+## 六、部署到服务器（商用）
+
+1. **环境**：Python 3.10+，安装依赖 `pip install -r requirements.txt`。
+2. **安装方式二选一**：
+   - 直接拷贝项目到服务器，在应用代码中把项目目录加入 `sys.path` 后 `from agent_game_fake_app_api import FakeAppApiClient, create_client_and_init`。
+   - 或在本机打包：`pip install build && python -m build`，将生成的 dist 内 wheel/sdist 上传至服务器后 `pip install xxx.whl`。
+3. **配置**：在业务中通过环境变量或配置中心注入 `BASE_URL`（租房仿真 API 基地址）和 `USER_ID`（用户工号），再创建客户端调用。
+4. **上线前**：在目标环境执行 `python -m pytest tests/ -v`，确认 29 个单元测试通过；若有真实服务，可再跑集成测试做连通性校验。
+
+---
+
+## 七、FAQ
+
+Q：重复执行同一个用例，第二次执行后房源数据查不到了  
+A：首次执行用例时，将房源状态更新为了已租，再次执行用例，查询可租房源时返回结果必然为空。此时可以手动触发房源重置接口（见章节二）。
 
